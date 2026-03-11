@@ -1,0 +1,13 @@
+* { box-sizing: border-box; }
+body { margin: 0; font-family: Arial, sans-serif; background: #f6f7fb; }
+.page { padding: 20px; }
+.split { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; align-items: start; }
+.left, .right { background: white; border-radius: 12px; padding: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+pre { white-space: pre-wrap; background: #f7f7f7; padding: 8px; border-radius: 6px; }
+.sentence-row, .question-card { border: 1px solid #ececec; border-radius: 8px; padding: 8px; margin: 8px 0; }
+.notes-actions { display: flex; gap: 8px; margin-bottom: 8px; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { border: 1px solid #ddd; padding: 6px; text-align: left; }
+.popover { position: absolute; z-index: 10; width: 260px; background: #101828; color: #fff; padding: 10px; border-radius: 8px; }
+.popover button { margin-right: 6px; }
+@media (max-width: 960px) { .split { grid-template-columns: 1fr; } }
