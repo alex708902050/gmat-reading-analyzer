@@ -13,6 +13,7 @@ export type OptionItem = {
 
 export type QuestionItem = {
   id: string;
+  type: string;
   en: string;
   zh: string;
   options: OptionItem[];
@@ -31,8 +32,10 @@ export type AnalysisResult = {
     mainIdea: string;
     structure: string[];
     argumentFlow: string[];
+    authorTone: string;
   };
   questions: QuestionItem[];
+  warnings?: string[];
 };
 
 export type WordLookup = {

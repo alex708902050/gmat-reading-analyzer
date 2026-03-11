@@ -7,7 +7,7 @@ const splitSentences = (text: string) =>
     .filter(Boolean)
     .slice(0, 12);
 
-const toZhStub = (text: string) => `（机翻占位）${text}`;
+const toZhStub = (text: string) => `（需配置 OPENAI_API_KEY）${text}`;
 
 const parseQuestions = (text: string): QuestionItem[] => {
   const blocks = text.split(/\n(?=\d+\.|Question\s+\d+)/i).filter((b) => /\?/.test(b));
@@ -23,18 +23,19 @@ const parseQuestions = (text: string): QuestionItem[] => {
         en: enOpt,
         zh: toZhStub(enOpt),
         isCorrect: optionIndex === 0,
-        explanation: optionIndex === 0 ? '占位：该项与文章主旨最匹配。' : '占位：该项与题干要求不一致或偏离原文。'
+        explanation: optionIndex === 0 ? '配置 key 后可生成真实解析。' : '配置 key 后可生成真实排除逻辑。'
       };
     });
 
     return {
       id: `q-${idx + 1}`,
+      type: 'Unknown',
       en,
       zh: toZhStub(en),
       options,
       answer: 'A',
-      whyCorrect: '占位：A 与文章核心观点一致。',
-      whyWrong: '占位：其余选项存在以偏概全、无中生有或偷换概念问题。'
+      whyCorrect: '尚未配置 OPENAI_API_KEY，暂无法生成可信答案解析。',
+      whyWrong: '尚未配置 OPENAI_API_KEY，暂无法生成选项排除分析。'
     };
   });
 };
@@ -50,19 +51,13 @@ export const fallbackAnalysis = (sourceText: string): AnalysisResult => {
       sentences
     },
     logic: {
-      mainIdea: '占位：作者讨论一个核心议题，并通过例证支持观点。',
-      structure: [
-        '段落 1：提出背景与问题。',
-        '段落 2：给出作者观点与关键证据。',
-        '段落 3：总结影响或结论。'
-      ],
-      argumentFlow: [
-        '提出现象 → 引出争议',
-        '对比观点 → 给出立场',
-        '依据证据 → 得出结论'
-      ]
+      mainIdea: '未配置 OPENAI_API_KEY，暂时无法进行真实逻辑分析。',
+      structure: ['请在 Vercel 配置 OPENAI_API_KEY 后重新部署。'],
+      argumentFlow: ['重新部署后可获得主旨、段落功能、论证关系与作者态度分析。'],
+      authorTone: 'N/A'
     },
-    questions: parseQuestions(sourceText)
+    questions: parseQuestions(sourceText),
+    warnings: ['请在 Vercel 的 Environment Variables 添加 OPENAI_API_KEY，并 Redeploy。']
   };
 };
 
