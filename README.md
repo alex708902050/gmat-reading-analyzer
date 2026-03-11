@@ -1,49 +1,35 @@
-# GMAT Reading Analyzer (Next.js MVP)
+# GMAT Reading Analyzer
 
-一个可部署到 Vercel 的云端网页工具：支持上传多张 GMAT 阅读截图，OCR 提取文字，生成文章与题目解析，并提供右侧单词笔记表（去重、导出 Excel、清空）。
+一个可部署到 Vercel 的 GMAT 阅读分析网页工具：支持粘贴/拖拽/上传多张截图，服务端调用 OpenAI 完成 OCR + 阅读逻辑分析 + 题目选项解析，并提供可检索、可导出的单词笔记侧栏。
 
-## 1. 功能概览
+## 功能亮点
 
-- 多图上传（同一批次可包含文章+题目截图）。
-- OCR 识别：使用 `tesseract.js` 在前端识别英文文本。
-- 分析结果（左侧）：
-  - 文章原文
-  - 句子拆分 + 英中对照
-  - 主旨、段落结构、论证逻辑
-  - 题干英中、ABCD(E) 选项英中
-  - 正确答案 + 对错解析
-- 单词笔记（右侧）：
-  - 在左侧拖动选择单词/词组后弹窗释义
-  - 点击“记录到笔记”写入表格
-  - 自动大小写无关去重提示
+- **聊天式上传体验**：
+  - `Ctrl + V` 直接粘贴截图
+  - 拖拽图片到输入区
+  - 点击上传作为备用
+  - 支持一次多图，并显示缩略图预览
+- **服务端 OpenAI 分析（不暴露 API key）**：
+  - `/api/analyze` 接收图片
+  - 模型执行 OCR 并提取文章/题目/选项
+  - 返回结构化 JSON（文章、句子翻译、逻辑分析、题目、选项、答案解析）
+- **GMAT 常见题干模式识别增强**：
+  - primary purpose
+  - main idea
+  - inference
+  - according to the passage
+  - the author suggests
+  - the passage implies
+  - it can be inferred that
+- **选项识别增强**：支持 A/B/C/D/E 标记与归一化。
+- **右侧单词笔记**：
+  - 表格累计
+  - 搜索
+  - 去重提醒（可查看原笔记或仍然添加）
   - 导出 Excel
   - 一键清空
-- 上传新截图时：
-  - 左侧分析结果重置并重新生成
-  - 右侧笔记保留不变
 
-## 2. 项目结构
-
-```text
-.
-├─ app/
-│  ├─ api/
-│  │  ├─ analyze/route.ts      # 分析 API（优先调用 OpenAI，无 key 则回退）
-│  │  └─ lookup/route.ts       # 单词释义 API（优先调用 OpenAI，无 key 则回退）
-│  ├─ globals.css              # 全局样式（左右分栏 + 表格 + 浮窗）
-│  ├─ layout.tsx               # 根布局
-│  └─ page.tsx                 # 核心页面（上传、OCR、分析渲染、词汇选择）
-├─ components/
-│  └─ WordNotesTable.tsx       # 词汇笔记表格（导出 Excel / 清空）
-├─ lib/
-│  ├─ fallback.ts              # 无模型时的占位分析与释义逻辑
-│  └─ types.ts                 # 类型定义
-├─ package.json
-├─ next.config.mjs
-└─ tsconfig.json
-```
-
-## 3. 本地运行
+## 快速开始
 
 ```bash
 npm install
@@ -52,30 +38,43 @@ npm run dev
 
 打开 `http://localhost:3000`。
 
-## 4. 环境变量（可选）
+## 环境变量配置（必须）
 
-如果希望得到更好的中译和题目解析，可配置：
+项目需要在服务端读取：
 
 ```bash
 OPENAI_API_KEY=your_key_here
 ```
 
-> 未配置时系统会自动使用 fallback 占位逻辑，MVP 仍可运行。
+> 未配置时，页面会明确提示你去 Vercel 添加 `OPENAI_API_KEY`，并且会提醒你重新部署，不再仅显示“机翻占位”。
 
-## 5. 部署到 Vercel
+## 在 Vercel 配置 OPENAI_API_KEY
 
-1. 将仓库推送到 GitHub。
-2. 登录 Vercel，导入该仓库。
-3. Framework 选择 Next.js（自动识别）。
-4. 在 Vercel Project Settings → Environment Variables 添加：
-   - `OPENAI_API_KEY`（可选）
-5. 点击 Deploy。
+1. 登录 Vercel 并导入该仓库。
+2. 打开项目：`Settings -> Environment Variables`。
+3. 新增：
+   - Key: `OPENAI_API_KEY`
+   - Value: 你的 OpenAI Key
+4. 保存后执行 **Redeploy**（必须）。
 
-## 6. MVP 说明与后续可扩展
+> 仅添加环境变量不会自动让旧构建生效，必须重新部署。
 
-当前版本重点实现了完整工作流与交互骨架。后续建议：
+## 使用流程
 
-- OCR 后做版面重排（识别题干/选项区域）。
-- 增加用户体系与云端笔记持久化。
-- 增加句子级高亮与词频统计。
-- 将 fallback 翻译替换为专业翻译引擎。
+1. 在首页上传区粘贴、拖拽或点击添加图片（可多张）。
+2. 确认缩略图后点击 `Analyze`。
+3. 左侧查看分卡片分析结果：
+   - Article
+   - Sentence Translation
+   - Logic Analysis
+   - Questions
+   - Options
+   - Answer Explanation
+4. 在左侧选择单词触发释义浮层，加入右侧笔记。
+5. 右侧可搜索、导出 Excel、清空。
+
+## 部署说明
+
+- 框架：Next.js 14
+- 运行环境：Node.js（Vercel 默认可用）
+- API key 仅在服务端读取，不在前端暴露
