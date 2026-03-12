@@ -26,6 +26,22 @@ type LightweightAnalyze = {
   warnings?: string[];
 };
 
+type EnrichedAnalyze = {
+  article?: {
+    original?: string;
+    paragraphs?: Array<{ en?: string; zh?: string }>;
+  };
+  logic?: {
+    mainIdea?: string;
+    paragraphRoles?: string[];
+    paragraphLogic?: string[];
+    authorView?: string;
+    gmatTraps?: string[];
+  };
+  questions?: Array<Partial<QuestionItem>>;
+  warnings?: string[];
+};
+
 const QUESTION_PATTERNS = [
   'primary purpose',
   'main idea',
@@ -78,7 +94,7 @@ const normalizeOptions = (options: OptionItem[]) => {
 const parseDataUrl = (dataUrl: string) => {
   const match = dataUrl.match(/^data:([^;,]+);base64,(.+)$/);
   if (!match) return null;
-  return { mime: match[1], base64: match[2] };
+  return { base64: match[2] };
 };
 
 const getDataUrlSizeBytes = (dataUrl: string) => {
@@ -181,8 +197,7 @@ async function analyzeImageWithAI(openai: OpenAI, images: InputImage[], text: st
     ]
   }, { signal });
 
-  const parsed = JSON.parse(getResponseText(response) || '{}') as LightweightAnalyze;
-  return parsed;
+  return JSON.parse(getResponseText(response) || '{}') as EnrichedAnalyze;
 }
 
 const normalizeResult = (raw: AnalysisResult, sourceText: string): AnalysisResult => {
@@ -260,31 +275,49 @@ export async function POST(req: Request) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 20_000);
 
+    const stage1Controller = new AbortController();
+    const stage1Timer = setTimeout(() => stage1Controller.abort(), 20_000);
+
     let parsed: LightweightAnalyze;
     try {
-      parsed = await analyzeImageWithAI(openai, images, body.text ?? '', controller.signal);
+      parsed = await analyzeImageWithAI(openai, images, body.text ?? '', stage1Controller.signal);
     } finally {
-      clearTimeout(timer);
+      clearTimeout(stage1Timer);
+    }
+
+    const stage1Source = parsed.sourceText || body.text || '';
+
+    let enriched: EnrichedAnalyze = {};
+    if (stage1Source) {
+      const stage2Controller = new AbortController();
+      const stage2Timer = setTimeout(() => stage2Controller.abort(), 12_000);
+      try {
+        enriched = await enrichTextWithAI(openai, stage1Source, stage2Controller.signal);
+      } catch {
+        enriched = {};
+      } finally {
+        clearTimeout(stage2Timer);
+      }
     }
 
     const normalized = normalizeResult(
       {
-        sourceText: parsed.sourceText ?? '',
+        sourceText: stage1Source,
         article: {
-          original: parsed.sourceText || body.text || '',
-          paragraphs: []
+          original: enriched.article?.original || stage1Source,
+          paragraphs: (enriched.article?.paragraphs ?? []).map((p) => ({ en: p.en || '', zh: p.zh || '' }))
         },
         logic: {
-          mainIdea: '',
-          paragraphRoles: [],
-          paragraphLogic: [],
-          authorView: '',
-          gmatTraps: []
+          mainIdea: enriched.logic?.mainIdea || '',
+          paragraphRoles: enriched.logic?.paragraphRoles ?? [],
+          paragraphLogic: enriched.logic?.paragraphLogic ?? [],
+          authorView: enriched.logic?.authorView || '',
+          gmatTraps: enriched.logic?.gmatTraps ?? []
         },
-        questions: (parsed.questions ?? []) as QuestionItem[],
-        warnings: parsed.warnings ?? []
+        questions: (enriched.questions?.length ? enriched.questions : parsed.questions ?? []) as QuestionItem[],
+        warnings: [...(parsed.warnings ?? []), ...(enriched.warnings ?? [])]
       },
-      body.text ?? parsed.sourceText ?? ''
+      stage1Source
     );
 
     if (!normalized.questions.length && normalized.sourceText) {
