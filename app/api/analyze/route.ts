@@ -63,9 +63,10 @@ const normalizeResult = (raw: AnalysisResult, sourceText: string): AnalysisResul
     answer: (q.answer || '').replace(/[^A-E]/gi, '').slice(0, 1).toUpperCase() || 'A'
   }));
 
+  const fallbackSource = sourceText || raw.article?.original || '';
   const paragraphSource = raw.article?.paragraphs?.length
     ? raw.article.paragraphs
-    : (sourceText || raw.article?.original || '')
+    : fallbackSource
         .split(/\n{2,}/)
         .map((p) => p.trim())
         .filter(Boolean)
@@ -80,9 +81,9 @@ const normalizeResult = (raw: AnalysisResult, sourceText: string): AnalysisResul
     }));
 
   return {
-    sourceText: raw.sourceText || sourceText,
+    sourceText: raw.sourceText || fallbackSource,
     article: {
-      original: raw.article?.original || sourceText,
+      original: raw.article?.original || fallbackSource,
       paragraphs
     },
     logic: {

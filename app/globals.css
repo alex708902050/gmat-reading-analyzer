@@ -125,7 +125,7 @@ button.solid { background: #9a7484; color: #fff; border-color: #9a7484; }
   margin-bottom: 8px;
 }
 .notes-actions { display: flex; gap: 6px; margin-bottom: 8px; }
-.notes-table-wrap { max-height: 52vh; overflow-y: auto; overflow-x: hidden; border: 1px solid var(--border); border-radius: 8px; }
+.notes-table-wrap { max-height: 42vh; overflow-y: auto; overflow-x: hidden; border: 1px solid var(--border); border-radius: 8px; }
 .notes-table { width: 100%; border-collapse: collapse; font-size: 12px; }
 .notes-table th, .notes-table td { border-bottom: 1px solid #f4efeb; padding: 7px; text-align: left; vertical-align: top; word-break: break-word; white-space: normal; }
 .notes-table th { background: #faf6f3; position: sticky; top: 0; }
