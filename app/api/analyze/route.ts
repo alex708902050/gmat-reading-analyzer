@@ -17,6 +17,9 @@ type LightweightAnalyze = {
         id?: string;
         type?: string;
         en?: string;
+        zh?: string;
+        answer?: string;
+        options?: OptionItem[];
       }
     | string
   >;
@@ -69,16 +72,22 @@ const inferQuestionType = (questionText: string) => {
 
 const normalizeOptions = (options: OptionItem[]) => {
   const labels: OptionItem['label'][] = ['A', 'B', 'C', 'D', 'E'];
+  const missingReasoningFallback = 'This option explanation was not returned by the model.';
+
   return labels.map((label) => {
     const option = options.find((opt) => opt.label === label);
-    return (
-      option ?? {
+
+    return option
+      ? {
+          ...option,
+          reasoning: option.reasoning?.trim() || missingReasoningFallback
+        }
+      : {
         label,
         en: `${label}. Missing option`,
         zh: `${label}. 选项缺失`,
         reasoning: '该选项在识别结果中缺失，请检查截图清晰度。'
-      }
-    );
+      };
   });
 };
 
@@ -156,46 +165,33 @@ async function analyzeImageWithAI(openai: OpenAI, images: InputImage[], text: st
     input: [
       {
         role: 'system',
-        content: [{ type: 'input_text', text: '你是 OCR 助手，只输出 JSON。' }]
-      },
-      {
-        role: 'user',
         content: [
-          { type: 'input_text', text: '提取为: {"sourceText":"","questions":[{"id":"q-1","en":""}],"warnings":[]}' },
-          ...optimizedImages.map((img) => ({
-            type: 'input_image' as const,
-            image_url: img.dataUrl,
-            detail: 'low' as const
-          })),
-          ...(text ? [{ type: 'input_text' as const, text: `补充文本：${text}` }] : [])
+          {
+            type: 'input_text',
+            text: '你是 OCR 助手。只提取文章文本与题干。只输出 JSON。'
+          }
         ]
-      }
-    ]
-  }, { signal });
-
-  return JSON.parse(getResponseText(response) || '{}') as LightweightAnalyze;
-}
-
-async function enrichTextWithAI(openai: OpenAI, sourceText: string, signal: AbortSignal) {
-  const response = await openai.responses.create({
-    model: 'gpt-4o-mini',
-    temperature: 0,
-    max_output_tokens: 2200,
-    text: { format: { type: 'json_object' } },
-    input: [
-      {
-        role: 'system',
-        content: [{ type: 'input_text', text: '你是 GMAT 阅读老师，只输出 JSON。' }]
       },
       {
         role: 'user',
         content: [
           {
             type: 'input_text',
-            text:
-              '基于文本输出: {"article":{"original":"","paragraphs":[{"en":"","zh":""}]},"logic":{"mainIdea":"","paragraphRoles":[],"paragraphLogic":[],"authorView":"","gmatTraps":[]},"questions":[],"warnings":[]}。文本如下：\n' +
-              sourceText
-          }
+            text: '输出: {"sourceText":"","questions":[{"id":"q-1","en":""}],"warnings":[]}。不要输出翻译、逻辑分析、选项解析。'
+          },
+          ...optimizedImages.map((img) => ({
+            type: 'input_image' as const,
+            image_url: img.dataUrl,
+            detail: 'low' as const
+          })),
+          ...(text
+            ? [
+                {
+                  type: 'input_text' as const,
+                  text: `补充文本：${text}`
+                }
+              ]
+            : [])
         ]
       }
     ]
@@ -219,6 +215,7 @@ const normalizeResult = (raw: AnalysisResult, sourceText: string): AnalysisResul
 
   const paragraphFallbackSource = sourceText || raw.article?.original || '';
   const paragraphs = raw.article?.paragraphs?.filter((p) => p.en?.trim()) ?? [];
+  const fallbackSource = sourceText || raw.article?.original || '';
 
   return {
     sourceText: raw.sourceText || paragraphFallbackSource,
@@ -275,6 +272,8 @@ export async function POST(req: Request) {
 
   try {
     const openai = new OpenAI({ apiKey });
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 20_000);
 
     const stage1Controller = new AbortController();
     const stage1Timer = setTimeout(() => stage1Controller.abort(), 20_000);
