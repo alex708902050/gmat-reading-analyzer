@@ -40,16 +40,22 @@ const inferQuestionType = (questionText: string) => {
 
 const normalizeOptions = (options: OptionItem[]) => {
   const labels: OptionItem['label'][] = ['A', 'B', 'C', 'D', 'E'];
+  const missingReasoningFallback = 'This option explanation was not returned by the model.';
+
   return labels.map((label) => {
     const option = options.find((opt) => opt.label === label);
-    return (
-      option ?? {
+
+    return option
+      ? {
+          ...option,
+          reasoning: option.reasoning?.trim() || missingReasoningFallback
+        }
+      : {
         label,
         en: `${label}. Missing option`,
         zh: `${label}. 选项缺失`,
         reasoning: '该选项在识别结果中缺失，请检查截图清晰度。'
-      }
-    );
+      };
   });
 };
 
@@ -65,6 +71,7 @@ const normalizeResult = (raw: AnalysisResult, sourceText: string): AnalysisResul
 
   const fallbackSource = sourceText || raw.article?.original || '';
   const paragraphs = raw.article?.paragraphs?.filter((p) => p.en?.trim()) ?? [];
+  const fallbackSource = sourceText || raw.article?.original || '';
 
   return {
     sourceText: raw.sourceText || fallbackSource,
