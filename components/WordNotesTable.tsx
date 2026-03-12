@@ -38,15 +38,17 @@ export function WordNotesTable({ notes, onClear, highlightedWord }: Props) {
         <h3>Word Notes</h3>
         <span>{notes.length} entries</span>
       </div>
-      <input
-        className="notes-search"
-        placeholder="搜索单词 / 中文 / 句子"
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-      />
-      <div className="notes-actions">
-        <button onClick={exportExcel} disabled={notes.length === 0}>导出 Excel</button>
-        <button onClick={onClear} disabled={notes.length === 0}>清空</button>
+      <div className="notes-toolbar">
+        <input
+          className="notes-search"
+          placeholder="Search"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+        <div className="notes-actions">
+          <button onClick={exportExcel} disabled={notes.length === 0}>Extract</button>
+          <button onClick={onClear} disabled={notes.length === 0}>Delete</button>
+        </div>
       </div>
       <div className="notes-table-wrap">
         <table className="notes-table">

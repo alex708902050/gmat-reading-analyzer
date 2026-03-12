@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { AnalysisResult, WordLookup } from '@/lib/types';
 import { WordNotesTable, type NoteRow } from '@/components/WordNotesTable';
 
@@ -98,8 +98,9 @@ export default function Home() {
     const arr = Array.from(files).filter((file) => file.type.startsWith('image/'));
     if (!arr.length) return;
     const normalized = await Promise.all(arr.map(compressImage));
-    setImages((prev) => [...prev, ...normalized]);
+    setImages(normalized);
     setAnalysis(null);
+    setPopover(null);
     setMessage(`已添加 ${normalized.length} 张图片，点击 Analyze 开始分析。`);
   };
 
@@ -125,7 +126,7 @@ export default function Home() {
       if (data.warnings?.length) {
         setMessage(data.warnings.join('；'));
       } else {
-        setMessage('分析完成。上传新图片会清空左侧分析，右侧笔记保留。');
+        setMessage('');
       }
     } catch (error) {
       console.error(error);
@@ -180,14 +181,6 @@ export default function Home() {
     setDuplicateState(null);
   };
 
-  const stats = useMemo(
-    () => ({
-      paragraphCount: analysis?.article.paragraphs.length ?? 0,
-      questionCount: analysis?.questions.length ?? 0
-    }),
-    [analysis]
-  );
-
   return (
     <main className="app-shell">
       <header className="topbar">
@@ -197,6 +190,77 @@ export default function Home() {
 
       <div className="layout">
         <section className="left-panel" onMouseUp={onTextMouseUp}>
+          {message && <p className="hint">{message}</p>}
+
+          {!analysis && !loading && (
+            <div className="empty-state">
+              <h3>♡</h3>
+            </div>
+          )}
+
+          {loading && <div className="loading-card">正在识别图片文本并生成结构化分析...</div>}
+
+          {analysis && (
+            <div className="result-grid">
+              <article className="card compact">
+                <h3>Passage Translation</h3>
+                <div className="paragraph-list">
+                  {analysis.article.paragraphs.map((paragraph, idx) => (
+                    <section key={idx} className="paragraph-item">
+                      <p>{paragraph.en}</p>
+                      <p className="zh">{paragraph.zh}</p>
+                    </section>
+                  ))}
+                </div>
+              </article>
+
+              <article className="card compact">
+                <h3>Passage Logic</h3>
+                <div className="logic-block">
+                  <p><strong>文章主旨：</strong>{analysis.logic.mainIdea}</p>
+                  <p><strong>作者观点：</strong>{analysis.logic.authorView}</p>
+                  <div>
+                    <strong>每段作用：</strong>
+                    <ul>{analysis.logic.paragraphRoles.map((x, idx) => <li key={idx}>{x}</li>)}</ul>
+                  </div>
+                  <div>
+                    <strong>段落之间逻辑：</strong>
+                    <ul>{analysis.logic.paragraphLogic.map((x, idx) => <li key={idx}>{x}</li>)}</ul>
+                  </div>
+                  <div>
+                    <strong>GMAT 常考题型：</strong>
+                    <ul>{analysis.logic.gmatTraps.map((x, idx) => <li key={idx}>{x}</li>)}</ul>
+                  </div>
+                </div>
+              </article>
+
+              <article className="card compact">
+                <h3>Question Analysis</h3>
+                {analysis.questions.map((q) => (
+                  <div key={q.id} className="question-card">
+                    <p><strong>题型：</strong>{q.type}</p>
+                    <p><strong>题干（英文）：</strong>{q.en}</p>
+                    <p><strong>题干（中文）：</strong>{q.zh}</p>
+                    <p><strong>正确答案：</strong>{q.answer}</p>
+                    <div className="option-stack">
+                      {q.options.map((o) => (
+                        <div key={o.label} className="option-row">
+                          <p><strong>{o.label}. 英文：</strong>{o.en}</p>
+                          <p><strong>{o.label}. 中文：</strong>{o.zh}</p>
+                          <p><strong>{o.label}. 解析：</strong>{o.reasoning}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </article>
+            </div>
+          )}
+        </section>
+
+        <aside className="right-panel">
+          <WordNotesTable notes={notes} onClear={() => setNotes([])} highlightedWord={highlightedWord} />
+
           <div
             className={`composer ${dragging ? 'dragging' : ''}`}
             onDragOver={(e) => {
@@ -241,78 +305,6 @@ export default function Home() {
               </div>
             )}
           </div>
-
-          <p className="hint">{message}</p>
-
-          {!analysis && !loading && (
-            <div className="empty-state">
-              <h3>♡</h3>
-            </div>
-          )}
-
-          {loading && <div className="loading-card">正在识别图片文本并生成结构化分析...</div>}
-
-          {analysis && (
-            <div className="result-grid">
-              <article className="card compact">
-                <h3>Passage Translation ({stats.paragraphCount})</h3>
-                <div className="paragraph-list">
-                  {analysis.article.paragraphs.map((paragraph, idx) => (
-                    <section key={idx} className="paragraph-item">
-                      <h4>段落 {idx + 1}</h4>
-                      <p>{paragraph.en}</p>
-                      <p className="zh">{paragraph.zh}</p>
-                    </section>
-                  ))}
-                </div>
-              </article>
-
-              <article className="card compact">
-                <h3>Passage Logic</h3>
-                <div className="logic-block">
-                  <p><strong>文章主旨：</strong>{analysis.logic.mainIdea}</p>
-                  <p><strong>作者观点：</strong>{analysis.logic.authorView}</p>
-                  <div>
-                    <strong>每段作用：</strong>
-                    <ul>{analysis.logic.paragraphRoles.map((x, idx) => <li key={idx}>{x}</li>)}</ul>
-                  </div>
-                  <div>
-                    <strong>段落之间逻辑：</strong>
-                    <ul>{analysis.logic.paragraphLogic.map((x, idx) => <li key={idx}>{x}</li>)}</ul>
-                  </div>
-                  <div>
-                    <strong>GMAT 常考题型：</strong>
-                    <ul>{analysis.logic.gmatTraps.map((x, idx) => <li key={idx}>{x}</li>)}</ul>
-                  </div>
-                </div>
-              </article>
-
-              <article className="card compact">
-                <h3>Question Analysis ({stats.questionCount})</h3>
-                {analysis.questions.map((q) => (
-                  <div key={q.id} className="question-card">
-                    <p><strong>题型：</strong>{q.type}</p>
-                    <p><strong>题干（英文）：</strong>{q.en}</p>
-                    <p><strong>题干（中文）：</strong>{q.zh}</p>
-                    <p><strong>正确答案：</strong>{q.answer}</p>
-                    <div className="option-stack">
-                      {q.options.map((o) => (
-                        <div key={o.label} className="option-row">
-                          <p><strong>{o.label}. 英文：</strong>{o.en}</p>
-                          <p><strong>{o.label}. 中文：</strong>{o.zh}</p>
-                          <p><strong>{o.label}. 解析：</strong>{o.reasoning}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </article>
-            </div>
-          )}
-        </section>
-
-        <aside className="right-panel">
-          <WordNotesTable notes={notes} onClear={() => setNotes([])} highlightedWord={highlightedWord} />
         </aside>
       </div>
 
