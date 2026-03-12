@@ -63,20 +63,27 @@ const normalizeResult = (raw: AnalysisResult, sourceText: string): AnalysisResul
     answer: (q.answer || '').replace(/[^A-E]/gi, '').slice(0, 1).toUpperCase() || 'A'
   }));
 
-  const paragraphs = raw.article?.paragraphs?.filter((p) => p.en?.trim()) ?? [];
+  const paragraphSource = raw.article?.paragraphs?.length
+    ? raw.article.paragraphs
+    : (sourceText || raw.article?.original || '')
+        .split(/\n{2,}/)
+        .map((p) => p.trim())
+        .filter(Boolean)
+        .map((p) => ({ en: p, zh: '' }));
+
+  const paragraphs = paragraphSource
+    .map((p) => ({ en: p.en?.trim() || '', zh: p.zh?.trim() || '' }))
+    .filter((p) => p.en)
+    .map((p) => ({
+      en: p.en,
+      zh: p.zh || '段落翻译缺失，请重试。'
+    }));
 
   return {
     sourceText: raw.sourceText || sourceText,
     article: {
       original: raw.article?.original || sourceText,
-      paragraphs: paragraphs.length
-        ? paragraphs
-        : sourceText
-            .split(/\n{2,}/)
-            .map((p) => p.trim())
-            .filter(Boolean)
-            .slice(0, 6)
-            .map((p) => ({ en: p, zh: '段落翻译缺失，请重试。' }))
+      paragraphs
     },
     logic: {
       mainIdea: raw.logic?.mainIdea || '主旨提取失败，请重试。',
