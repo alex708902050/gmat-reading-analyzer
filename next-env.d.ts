@@ -1,5 +1,15 @@
-/// <reference types="next" />
-/// <reference types="next/image-types/global" />
+import './globals.css';
+import { ReactNode } from 'react';
 
-// NOTE: This file should not be edited
-// see https://nextjs.org/docs/app/api-reference/config/typescript for more information.
+export const metadata = {
+  title: 'GMAT Reading Analyzer',
+  description: 'OCR and analysis tool for GMAT reading screenshots'
+};
+
+export default function RootLayout({ children }: { children: ReactNode }) {
+  return (
+    <html lang="zh-CN">
+      <body>{children}</body>
+    </html>
+  );
+}
