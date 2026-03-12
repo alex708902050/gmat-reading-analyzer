@@ -70,16 +70,21 @@ const getSnippetWithWord = (word: string, sourceText: string, fallbackText: stri
     const idx = words.findIndex((token) => token.replace(/^[^a-zA-Z]+|[^a-zA-Z]+$/g, '').toLowerCase() === lower);
 
     if (idx >= 0) {
-      const start = Math.max(0, idx - 6);
-      const end = Math.min(words.length, idx + 7);
+      const maxWords = 10;
+      const halfWindow = Math.floor((maxWords - 1) / 2);
+      let start = Math.max(0, idx - halfWindow);
+      let end = Math.min(words.length, start + maxWords);
+
+      if (end - start < maxWords) {
+        start = Math.max(0, end - maxWords);
+      }
+
       const snippet = words.slice(start, end).join(' ');
-      const left = start > 0 ? '... ' : '';
-      const right = end < words.length ? ' ...' : '';
-      return `${left}${snippet}${right}`;
+      return `... ${snippet} ...`;
     }
   }
 
-  return fallbackText.includes(normalizedWord) ? fallbackText : `${normalizedWord} ...`;
+  return `... ${normalizedWord} ...`;
 };
 
 export default function Home() {
@@ -185,12 +190,11 @@ export default function Home() {
     <main className="app-shell">
       <header className="topbar">
         <h1>AUTO ANALYSIS</h1>
-        <p>♡</p>
       </header>
 
       <div className="layout">
         <section className="left-panel" onMouseUp={onTextMouseUp}>
-          {message && <p className="hint">{message}</p>}
+          <p className="hint">{message}</p>
 
           {!analysis && !loading && (
             <div className="empty-state">
@@ -260,7 +264,6 @@ export default function Home() {
 
         <aside className="right-panel">
           <WordNotesTable notes={notes} onClear={() => setNotes([])} highlightedWord={highlightedWord} />
-
           <div
             className={`composer ${dragging ? 'dragging' : ''}`}
             onDragOver={(e) => {

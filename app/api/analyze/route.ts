@@ -69,6 +69,7 @@ const normalizeResult = (raw: AnalysisResult, sourceText: string): AnalysisResul
     answer: (q.answer || '').replace(/[^A-E]/gi, '').slice(0, 1).toUpperCase() || 'A'
   }));
 
+  const fallbackSource = sourceText || raw.article?.original || '';
   const paragraphs = raw.article?.paragraphs?.filter((p) => p.en?.trim()) ?? [];
   const fallbackSource = sourceText || raw.article?.original || '';
 
@@ -77,12 +78,14 @@ const normalizeResult = (raw: AnalysisResult, sourceText: string): AnalysisResul
     article: {
       original: raw.article?.original || fallbackSource,
       paragraphs: paragraphs.length
-        ? paragraphs
+        ? paragraphs.map((p) => ({
+            en: p.en?.trim() || '',
+            zh: p.zh?.trim() || '段落翻译缺失，请重试。'
+          }))
         : fallbackSource
             .split(/\n{2,}/)
             .map((p) => p.trim())
             .filter(Boolean)
-            .slice(0, 6)
             .map((p) => ({ en: p, zh: '段落翻译缺失，请重试。' }))
     },
     logic: {
