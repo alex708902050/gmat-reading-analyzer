@@ -10,6 +10,22 @@ type AnalyzeRequest = {
   images?: InputImage[];
 };
 
+type LightweightAnalyze = {
+  sourceText?: string;
+  questions?: Array<
+    | {
+        id?: string;
+        type?: string;
+        en?: string;
+        zh?: string;
+        answer?: string;
+        options?: OptionItem[];
+      }
+    | string
+  >;
+  warnings?: string[];
+};
+
 const QUESTION_PATTERNS = [
   'primary purpose',
   'main idea',
@@ -59,15 +75,128 @@ const normalizeOptions = (options: OptionItem[]) => {
   });
 };
 
+const parseDataUrl = (dataUrl: string) => {
+  const match = dataUrl.match(/^data:([^;,]+);base64,(.+)$/);
+  if (!match) return null;
+  return { mime: match[1], base64: match[2] };
+};
+
+const getDataUrlSizeBytes = (dataUrl: string) => {
+  const parsed = parseDataUrl(dataUrl);
+  if (!parsed?.base64) return 0;
+  return Math.floor((parsed.base64.length * 3) / 4);
+};
+
+const tryCompressDataUrl = async (dataUrl: string) => {
+  const parsed = parseDataUrl(dataUrl);
+  if (!parsed) return dataUrl;
+
+  try {
+    // eslint-disable-next-line no-eval
+    const req = eval('require') as (name: string) => any;
+    const sharpModule = req('sharp');
+    const sharp = sharpModule?.default ?? sharpModule;
+    if (!sharp) return dataUrl;
+
+    const inputBuffer = Buffer.from(parsed.base64, 'base64');
+    const outputBuffer: Buffer = await sharp(inputBuffer)
+      .resize({ width: 1200, withoutEnlargement: true })
+      .jpeg({ quality: 70 })
+      .toBuffer();
+
+    return `data:image/jpeg;base64,${outputBuffer.toString('base64')}`;
+  } catch {
+    return dataUrl;
+  }
+};
+
+const optimizeImagePayload = async (images: InputImage[]) => {
+  const maxBytes = 800 * 1024;
+  return Promise.all(
+    images.map(async (img) => {
+      if (getDataUrlSizeBytes(img.dataUrl) <= maxBytes) return img;
+      const compressedDataUrl = await tryCompressDataUrl(img.dataUrl);
+      return {
+        ...img,
+        type: 'image/jpeg',
+        dataUrl: compressedDataUrl
+      };
+    })
+  );
+};
+
+const getResponseText = (response: OpenAI.Responses.Response) => {
+  if (response.output_text?.trim()) return response.output_text;
+
+  for (const item of response.output ?? []) {
+    if (item.type !== 'message') continue;
+    for (const chunk of item.content ?? []) {
+      if (chunk.type === 'output_text' && chunk.text?.trim()) return chunk.text;
+    }
+  }
+
+  return '';
+};
+
+async function analyzeImageWithAI(openai: OpenAI, images: InputImage[], text: string, signal: AbortSignal) {
+  const optimizedImages = await optimizeImagePayload(images);
+
+  const response = await openai.responses.create({
+    model: 'gpt-4o-mini',
+    temperature: 0,
+    max_output_tokens: 1200,
+    text: { format: { type: 'json_object' } },
+    input: [
+      {
+        role: 'system',
+        content: [
+          {
+            type: 'input_text',
+            text: '你是 OCR 助手。只提取文章文本与题干。只输出 JSON。'
+          }
+        ]
+      },
+      {
+        role: 'user',
+        content: [
+          {
+            type: 'input_text',
+            text: '输出: {"sourceText":"","questions":[{"id":"q-1","en":""}],"warnings":[]}。不要输出翻译、逻辑分析、选项解析。'
+          },
+          ...optimizedImages.map((img) => ({
+            type: 'input_image' as const,
+            image_url: img.dataUrl,
+            detail: 'low' as const
+          })),
+          ...(text
+            ? [
+                {
+                  type: 'input_text' as const,
+                  text: `补充文本：${text}`
+                }
+              ]
+            : [])
+        ]
+      }
+    ]
+  }, { signal });
+
+  const parsed = JSON.parse(getResponseText(response) || '{}') as LightweightAnalyze;
+  return parsed;
+}
+
 const normalizeResult = (raw: AnalysisResult, sourceText: string): AnalysisResult => {
-  const questions: QuestionItem[] = (raw.questions ?? []).map((q, idx) => ({
-    id: q.id || `q-${idx + 1}`,
-    type: q.type || inferQuestionType(q.en || ''),
-    en: q.en || `Question ${idx + 1}`,
-    zh: q.zh || '题干翻译缺失',
-    options: normalizeOptions(q.options ?? []),
-    answer: (q.answer || '').replace(/[^A-E]/gi, '').slice(0, 1).toUpperCase() || 'A'
-  }));
+  const questions: QuestionItem[] = (raw.questions ?? []).map((q, idx) => {
+    const current: Partial<QuestionItem> = typeof q === 'string' ? { en: q } : q;
+    return {
+      id: current.id || `q-${idx + 1}`,
+      type: current.type || inferQuestionType(current.en || ''),
+      en: current.en || `Question ${idx + 1}`,
+      zh: current.zh || '题干翻译缺失',
+      options: normalizeOptions(current.options ?? []),
+      answer: (current.answer || '').replace(/[^A-E]/gi, '').slice(0, 1).toUpperCase() || 'A'
+    };
+  });
 
   const paragraphFallbackSource = sourceText || raw.article?.original || '';
   const paragraphs = raw.article?.paragraphs?.filter((p) => p.en?.trim()) ?? [];
@@ -124,46 +253,39 @@ export async function POST(req: Request) {
     );
   }
 
+  const fallback = fallbackAnalysis(body.text ?? '');
+
   try {
     const openai = new OpenAI({ apiKey });
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 20_000);
 
-    const response = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
-      temperature: 0.2,
-      response_format: { type: 'json_object' },
-      messages: [
-        {
-          role: 'system',
-          content:
-            '你是一名 GMAT 阅读老师。你需要直接基于图片做视觉识别并完成阅读分析，避免要求额外 OCR。只输出严格 JSON，不要输出 Markdown。所有逻辑分析与选项解释必须中文。'
+    let parsed: LightweightAnalyze;
+    try {
+      parsed = await analyzeImageWithAI(openai, images, body.text ?? '', controller.signal);
+    } finally {
+      clearTimeout(timer);
+    }
+
+    const normalized = normalizeResult(
+      {
+        sourceText: parsed.sourceText ?? '',
+        article: {
+          original: parsed.sourceText || body.text || '',
+          paragraphs: []
         },
-        {
-          role: 'user',
-          content: [
-            {
-              type: 'text',
-              text:
-                '请输出 JSON：{"sourceText":"","article":{"original":"","paragraphs":[{"en":"","zh":""}]},"logic":{"mainIdea":"","paragraphRoles":[""],"paragraphLogic":[""],"authorView":"","gmatTraps":[""]},"questions":[{"id":"q-1","type":"","en":"","zh":"","options":[{"label":"A","en":"","zh":"","reasoning":""}],"answer":"A"}],"warnings":[]}。要求：1) 段落级中英翻译；2) Question 的 A-E 每个选项都给中文 reasoning，说明为什么对或错；3) 若信息缺失请在 warnings 说明。'
-            },
-            ...images.map((img) => ({
-              type: 'image_url' as const,
-              image_url: { url: img.dataUrl }
-            })),
-            ...(body.text
-              ? [
-                  {
-                    type: 'text' as const,
-                    text: `补充文本：${body.text}`
-                  }
-                ]
-              : [])
-          ]
-        }
-      ]
-    });
-
-    const parsed = JSON.parse(response.choices[0]?.message?.content ?? '{}') as AnalysisResult;
-    const normalized = normalizeResult(parsed, body.text ?? parsed.sourceText ?? '');
+        logic: {
+          mainIdea: '',
+          paragraphRoles: [],
+          paragraphLogic: [],
+          authorView: '',
+          gmatTraps: []
+        },
+        questions: (parsed.questions ?? []) as QuestionItem[],
+        warnings: parsed.warnings ?? []
+      },
+      body.text ?? parsed.sourceText ?? ''
+    );
 
     if (!normalized.questions.length && normalized.sourceText) {
       const questionHints = extractQuestionCandidates(normalized.sourceText);
@@ -173,10 +295,14 @@ export async function POST(req: Request) {
     return NextResponse.json(normalized);
   } catch (error) {
     console.error('Analyze fallback:', error);
+    const timeoutText = error instanceof Error && error.name === 'AbortError'
+      ? 'OpenAI 调用超时（20 秒），已返回本地兜底结果。'
+      : 'OpenAI 调用失败，请检查 key、额度或图片内容后重试。';
+
     return NextResponse.json(
       {
-        ...fallbackAnalysis(body.text ?? ''),
-        warnings: ['OpenAI 调用失败，请检查 key、额度或图片内容后重试。']
+        ...fallback,
+        warnings: [...(fallback.warnings ?? []), timeoutText]
       },
       { status: 200 }
     );

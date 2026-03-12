@@ -62,26 +62,65 @@ const getSnippetWithWord = (word: string, sourceText: string, fallbackText: stri
   const normalizedWord = word.trim();
   if (!normalizedWord) return fallbackText;
 
+  const normalizeToken = (token: string) => token.replace(/^[^a-zA-Z]+|[^a-zA-Z]+$/g, '').toLowerCase();
+
+  const findSentenceWithWord = (block: string) => {
+    const sentences = block
+      .split('.')
+      .map((sentence) => sentence.replace(/\s+/g, ' ').trim())
+      .filter(Boolean);
+
+    const lower = normalizedWord.toLowerCase();
+    return sentences.find((sentence) =>
+      sentence
+        .split(' ')
+        .filter(Boolean)
+        .some((token) => normalizeToken(token) === lower)
+    );
+  };
+
   const blocks = [sourceText, fallbackText].filter(Boolean);
   for (const block of blocks) {
-    const clean = block.replace(/\s+/g, ' ').trim();
-    const words = clean.split(' ').filter(Boolean);
+    const matchedSentence = findSentenceWithWord(block);
+    if (!matchedSentence) continue;
+
+    const words = matchedSentence.split(' ').filter(Boolean);
     const lower = normalizedWord.toLowerCase();
-    const idx = words.findIndex((token) => token.replace(/^[^a-zA-Z]+|[^a-zA-Z]+$/g, '').toLowerCase() === lower);
+    const idx = words.findIndex((token) => normalizeToken(token) === lower);
+    if (idx < 0) continue;
 
-    if (idx >= 0) {
-      const maxWords = 10;
-      const halfWindow = Math.floor((maxWords - 1) / 2);
-      let start = Math.max(0, idx - halfWindow);
-      let end = Math.min(words.length, start + maxWords);
-
-      if (end - start < maxWords) {
-        start = Math.max(0, end - maxWords);
-      }
-
-      const snippet = words.slice(start, end).join(' ');
-      return `... ${snippet} ...`;
+    if (words.length <= 5) {
+      return matchedSentence;
     }
+
+    if (words.length <= 10) {
+      return `... ${matchedSentence} ...`;
+    }
+
+    const minWords = 5;
+    const maxWords = 10;
+    const remaining = maxWords - 1;
+    const leftCount = Math.floor(remaining / 2);
+    const rightCount = remaining - leftCount;
+
+    let start = Math.max(0, idx - leftCount);
+    let end = Math.min(words.length, idx + rightCount + 1);
+
+    while (end - start < minWords && (start > 0 || end < words.length)) {
+      if (start > 0) start -= 1;
+      if (end - start < minWords && end < words.length) end += 1;
+    }
+
+    if (end - start < maxWords) {
+      if (start === 0) {
+        end = Math.min(words.length, maxWords);
+      } else if (end === words.length) {
+        start = Math.max(0, words.length - maxWords);
+      }
+    }
+
+    const snippet = words.slice(start, end).join(' ');
+    return `... ${snippet} ...`;
   }
 
   return `... ${normalizedWord} ...`;
