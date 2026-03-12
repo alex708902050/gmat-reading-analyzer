@@ -63,24 +63,51 @@ const getSnippetWithWord = (word: string, sourceText: string, fallbackText: stri
   if (!normalizedWord) return fallbackText;
 
   const blocks = [sourceText, fallbackText].filter(Boolean);
+  const lower = normalizedWord.toLowerCase();
+
   for (const block of blocks) {
     const clean = block.replace(/\s+/g, ' ').trim();
-    const words = clean.split(' ').filter(Boolean);
-    const lower = normalizedWord.toLowerCase();
-    const idx = words.findIndex((token) => token.replace(/^[^a-zA-Z]+|[^a-zA-Z]+$/g, '').toLowerCase() === lower);
+    const sentences = clean
+      .split('.')
+      .map((sentence) => sentence.trim())
+      .filter(Boolean);
 
-    if (idx >= 0) {
-      const maxWords = 10;
-      const halfWindow = Math.floor((maxWords - 1) / 2);
-      let start = Math.max(0, idx - halfWindow);
-      let end = Math.min(words.length, start + maxWords);
+    for (const sentence of sentences) {
+      const words = sentence.split(' ').filter(Boolean);
+      const idx = words.findIndex((token) => token.replace(/^[^a-zA-Z]+|[^a-zA-Z]+$/g, '').toLowerCase() === lower);
 
-      if (end - start < maxWords) {
-        start = Math.max(0, end - maxWords);
+      if (idx >= 0) {
+        if (words.length < 5) {
+          return `${sentence}.`;
+        }
+
+        if (words.length <= 10) {
+          return `${sentence}.`;
+        }
+
+        const minWords = 5;
+        const maxWords = 10;
+        const targetWords = Math.min(maxWords, Math.max(minWords, words.length));
+        const halfWindow = Math.floor((targetWords - 1) / 2);
+        let start = Math.max(0, idx - halfWindow);
+        let end = Math.min(words.length, start + targetWords);
+
+        if (end - start < minWords) {
+          if (start === 0) {
+            end = Math.min(words.length, minWords);
+          } else if (end === words.length) {
+            start = Math.max(0, words.length - minWords);
+          }
+        }
+
+        if (end - start < targetWords) {
+          start = Math.max(0, end - targetWords);
+          end = Math.min(words.length, start + targetWords);
+        }
+
+        const snippet = words.slice(start, end).join(' ');
+        return `... ${snippet} ...`;
       }
-
-      const snippet = words.slice(start, end).join(' ');
-      return `... ${snippet} ...`;
     }
   }
 
