@@ -62,24 +62,68 @@ const getSnippetWithWord = (word: string, sourceText: string, fallbackText: stri
   const normalizedWord = word.trim();
   if (!normalizedWord) return fallbackText;
 
+  const normalizeToken = (token: string) => token.replace(/^[^a-zA-Z]+|[^a-zA-Z]+$/g, '').toLowerCase();
+
+  const findSentenceWithWord = (block: string) => {
+    const sentences = block
+      .split('.')
+      .map((sentence) => sentence.replace(/\s+/g, ' ').trim())
+      .filter(Boolean);
+
+    const lower = normalizedWord.toLowerCase();
+    return sentences.find((sentence) =>
+      sentence
+        .split(' ')
+        .filter(Boolean)
+        .some((token) => normalizeToken(token) === lower)
+    );
+  };
+
   const blocks = [sourceText, fallbackText].filter(Boolean);
   for (const block of blocks) {
-    const clean = block.replace(/\s+/g, ' ').trim();
-    const words = clean.split(' ').filter(Boolean);
-    const lower = normalizedWord.toLowerCase();
-    const idx = words.findIndex((token) => token.replace(/^[^a-zA-Z]+|[^a-zA-Z]+$/g, '').toLowerCase() === lower);
+    const matchedSentence = findSentenceWithWord(block);
+    if (!matchedSentence) continue;
 
-    if (idx >= 0) {
-      const start = Math.max(0, idx - 6);
-      const end = Math.min(words.length, idx + 7);
-      const snippet = words.slice(start, end).join(' ');
-      const left = start > 0 ? '... ' : '';
-      const right = end < words.length ? ' ...' : '';
-      return `${left}${snippet}${right}`;
+    const words = matchedSentence.split(' ').filter(Boolean);
+    const lower = normalizedWord.toLowerCase();
+    const idx = words.findIndex((token) => normalizeToken(token) === lower);
+    if (idx < 0) continue;
+
+    if (words.length <= 5) {
+      return matchedSentence;
     }
+
+    if (words.length <= 10) {
+      return `... ${matchedSentence} ...`;
+    }
+
+    const minWords = 5;
+    const maxWords = 10;
+    const remaining = maxWords - 1;
+    const leftCount = Math.floor(remaining / 2);
+    const rightCount = remaining - leftCount;
+
+    let start = Math.max(0, idx - leftCount);
+    let end = Math.min(words.length, idx + rightCount + 1);
+
+    while (end - start < minWords && (start > 0 || end < words.length)) {
+      if (start > 0) start -= 1;
+      if (end - start < minWords && end < words.length) end += 1;
+    }
+
+    if (end - start < maxWords) {
+      if (start === 0) {
+        end = Math.min(words.length, maxWords);
+      } else if (end === words.length) {
+        start = Math.max(0, words.length - maxWords);
+      }
+    }
+
+    const snippet = words.slice(start, end).join(' ');
+    return `... ${snippet} ...`;
   }
 
-  return fallbackText.includes(normalizedWord) ? fallbackText : `${normalizedWord} ...`;
+  return `... ${normalizedWord} ...`;
 };
 
 export default function Home() {
@@ -192,56 +236,10 @@ export default function Home() {
     <main className="app-shell">
       <header className="topbar">
         <h1>AUTO ANALYSIS</h1>
-        <p>♡</p>
       </header>
 
       <div className="layout">
         <section className="left-panel" onMouseUp={onTextMouseUp}>
-          <div
-            className={`composer ${dragging ? 'dragging' : ''}`}
-            onDragOver={(e) => {
-              e.preventDefault();
-              setDragging(true);
-            }}
-            onDragLeave={() => setDragging(false)}
-            onDrop={(e) => {
-              e.preventDefault();
-              setDragging(false);
-              void addFiles(e.dataTransfer.files);
-            }}
-            onPaste={(e) => {
-              void addFiles(e.clipboardData.files);
-            }}
-          >
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              multiple
-              hidden
-              onChange={(e) => {
-                if (e.target.files) void addFiles(e.target.files);
-              }}
-            />
-            <div className="composer-actions">
-              <button onClick={() => fileInputRef.current?.click()}>Add</button>
-              <button className="solid" onClick={onAnalyze} disabled={loading || images.length === 0}>
-                {loading ? 'Analyzing...' : 'Analyze'}
-              </button>
-            </div>
-            {images.length > 0 && (
-              <div className="thumb-list">
-                {images.map((img) => (
-                  <figure key={img.id} className="thumb-item">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={img.dataUrl} alt={img.name} />
-                    <figcaption>{img.name}</figcaption>
-                  </figure>
-                ))}
-              </div>
-            )}
-          </div>
-
           <p className="hint">{message}</p>
 
           {!analysis && !loading && (
@@ -313,6 +311,50 @@ export default function Home() {
 
         <aside className="right-panel">
           <WordNotesTable notes={notes} onClear={() => setNotes([])} highlightedWord={highlightedWord} />
+          <div
+            className={`composer ${dragging ? 'dragging' : ''}`}
+            onDragOver={(e) => {
+              e.preventDefault();
+              setDragging(true);
+            }}
+            onDragLeave={() => setDragging(false)}
+            onDrop={(e) => {
+              e.preventDefault();
+              setDragging(false);
+              void addFiles(e.dataTransfer.files);
+            }}
+            onPaste={(e) => {
+              void addFiles(e.clipboardData.files);
+            }}
+          >
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              hidden
+              onChange={(e) => {
+                if (e.target.files) void addFiles(e.target.files);
+              }}
+            />
+            <div className="composer-actions">
+              <button onClick={() => fileInputRef.current?.click()}>Add</button>
+              <button className="solid" onClick={onAnalyze} disabled={loading || images.length === 0}>
+                {loading ? 'Analyzing...' : 'Analyze'}
+              </button>
+            </div>
+            {images.length > 0 && (
+              <div className="thumb-list">
+                {images.map((img) => (
+                  <figure key={img.id} className="thumb-item">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={img.dataUrl} alt={img.name} />
+                    <figcaption>{img.name}</figcaption>
+                  </figure>
+                ))}
+              </div>
+            )}
+          </div>
         </aside>
       </div>
 
