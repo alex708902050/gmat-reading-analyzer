@@ -25,7 +25,7 @@ button, input { font: inherit; }
 
 .layout {
   display: grid;
-  grid-template-columns: minmax(0, 3fr) minmax(280px, 1fr);
+  grid-template-columns: minmax(0, 7fr) minmax(320px, 3fr);
   gap: 12px;
   align-items: start;
 }
@@ -39,7 +39,7 @@ button, input { font: inherit; }
 }
 
 .left-panel { padding: 16px; }
-.right-panel { padding: 12px; position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow: auto; }
+.right-panel { padding: 12px; position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow-y: auto; overflow-x: hidden; display: flex; flex-direction: column; gap: 10px; }
 
 .composer {
   border: 1px dashed #d8c7bf;
@@ -125,9 +125,9 @@ button.solid { background: #9a7484; color: #fff; border-color: #9a7484; }
   margin-bottom: 8px;
 }
 .notes-actions { display: flex; gap: 6px; margin-bottom: 8px; }
-.notes-table-wrap { max-height: 70vh; overflow: auto; border: 1px solid var(--border); border-radius: 8px; }
+.notes-table-wrap { max-height: 42vh; overflow-y: auto; overflow-x: hidden; border: 1px solid var(--border); border-radius: 8px; }
 .notes-table { width: 100%; border-collapse: collapse; font-size: 12px; }
-.notes-table th, .notes-table td { border-bottom: 1px solid #f4efeb; padding: 7px; text-align: left; vertical-align: top; }
+.notes-table th, .notes-table td { border-bottom: 1px solid #f4efeb; padding: 7px; text-align: left; vertical-align: top; word-break: break-word; white-space: normal; }
 .notes-table th { background: #faf6f3; position: sticky; top: 0; }
 .highlight-row { background: #fff2f4; }
 
@@ -167,3 +167,5 @@ button.solid { background: #9a7484; color: #fff; border-color: #9a7484; }
   .layout { grid-template-columns: 1fr; }
   .right-panel { position: static; max-height: none; }
 }
+
+.right-panel .composer { margin-top: 2px; }
