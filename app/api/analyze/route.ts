@@ -17,9 +17,6 @@ type LightweightAnalyze = {
         id?: string;
         type?: string;
         en?: string;
-        zh?: string;
-        answer?: string;
-        options?: OptionItem[];
       }
     | string
   >;
@@ -154,6 +151,14 @@ const getResponseText = (response: OpenAI.Responses.Response) => {
   return '';
 };
 
+const safeJsonParse = <T>(value: string, fallback: T): T => {
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return fallback;
+  }
+};
+
 async function analyzeImageWithAI(openai: OpenAI, images: InputImage[], text: string, signal: AbortSignal) {
   const optimizedImages = await optimizeImagePayload(images);
 
@@ -165,39 +170,52 @@ async function analyzeImageWithAI(openai: OpenAI, images: InputImage[], text: st
     input: [
       {
         role: 'system',
+        content: [{ type: 'input_text', text: '你是 OCR 助手，只输出 JSON。' }]
+      },
+      {
+        role: 'user',
         content: [
-          {
-            type: 'input_text',
-            text: '你是 OCR 助手。只提取文章文本与题干。只输出 JSON。'
-          }
+          { type: 'input_text', text: '提取为: {"sourceText":"","questions":[{"id":"q-1","en":""}],"warnings":[]}' },
+          ...optimizedImages.map((img) => ({
+            type: 'input_image' as const,
+            image_url: img.dataUrl,
+            detail: 'low' as const
+          })),
+          ...(text ? [{ type: 'input_text' as const, text: `补充文本：${text}` }] : [])
         ]
+      }
+    ]
+  }, { signal });
+
+  return safeJsonParse<LightweightAnalyze>(getResponseText(response), {});
+}
+
+async function enrichTextWithAI(openai: OpenAI, sourceText: string, signal: AbortSignal) {
+  const response = await openai.responses.create({
+    model: 'gpt-4o-mini',
+    temperature: 0,
+    max_output_tokens: 2200,
+    text: { format: { type: 'json_object' } },
+    input: [
+      {
+        role: 'system',
+        content: [{ type: 'input_text', text: '你是 GMAT 阅读老师，只输出 JSON。' }]
       },
       {
         role: 'user',
         content: [
           {
             type: 'input_text',
-            text: '输出: {"sourceText":"","questions":[{"id":"q-1","en":""}],"warnings":[]}。不要输出翻译、逻辑分析、选项解析。'
-          },
-          ...optimizedImages.map((img) => ({
-            type: 'input_image' as const,
-            image_url: img.dataUrl,
-            detail: 'low' as const
-          })),
-          ...(text
-            ? [
-                {
-                  type: 'input_text' as const,
-                  text: `补充文本：${text}`
-                }
-              ]
-            : [])
+            text:
+              '基于文本输出: {"article":{"original":"","paragraphs":[{"en":"","zh":""}]},"logic":{"mainIdea":"","paragraphRoles":[],"paragraphLogic":[],"authorView":"","gmatTraps":[]},"questions":[],"warnings":[]}。文本如下：\n' +
+              sourceText
+          }
         ]
       }
     ]
   }, { signal });
 
-  return JSON.parse(getResponseText(response) || '{}') as EnrichedAnalyze;
+  return safeJsonParse<EnrichedAnalyze>(getResponseText(response), {});
 }
 
 const normalizeResult = (raw: AnalysisResult, sourceText: string): AnalysisResult => {
