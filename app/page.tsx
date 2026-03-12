@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { AnalysisResult, WordLookup } from '@/lib/types';
 import { WordNotesTable, type NoteRow } from '@/components/WordNotesTable';
 
@@ -175,6 +175,9 @@ export default function Home() {
   const [highlightedWord, setHighlightedWord] = useState<string>('');
   const [dragging, setDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const leftPanelRef = useRef<HTMLElement>(null);
+  const selectionLookupTimerRef = useRef<number | null>(null);
+  const lastSelectionKeyRef = useRef<string>('');
 
   const addFiles = async (files: FileList | File[]) => {
     const arr = Array.from(files).filter((file) => file.type.startsWith('image/'));
@@ -218,16 +221,24 @@ export default function Home() {
     }
   };
 
-  const onTextMouseUp = async () => {
-    const selection = window.getSelection()?.toString().trim();
+  const lookupSelectedText = useCallback(async () => {
+    const selected = window.getSelection();
+    const selection = selected?.toString().trim();
     if (!selection || selection.split(/\s+/).length > 4) return;
 
-    const range = window.getSelection()?.getRangeAt(0);
+    const range = selected?.rangeCount ? selected.getRangeAt(0) : null;
     if (!range) return;
 
+    const panel = leftPanelRef.current;
+    if (!panel || !panel.contains(range.commonAncestorContainer)) return;
+
     const rect = range.getBoundingClientRect();
+    if (!rect.width && !rect.height) return;
+
     const contextText = getContextTextFromRange(range);
     const sentence = getSnippetWithWord(selection, analysis?.sourceText ?? '', contextText);
+    const selectionKey = `${selection}-${Math.round(rect.left)}-${Math.round(rect.top)}-${Math.round(rect.width)}`;
+    if (selectionKey === lastSelectionKeyRef.current) return;
 
     const res = await fetch('/api/lookup', {
       method: 'POST',
@@ -236,15 +247,48 @@ export default function Home() {
     });
 
     const data = (await res.json()) as WordLookup;
+    const popoverWidth = 220;
+    const viewportPadding = 8;
+    const left = Math.min(
+      window.scrollX + window.innerWidth - popoverWidth - viewportPadding,
+      Math.max(window.scrollX + viewportPadding, rect.left + window.scrollX)
+    );
+
     setPopover({
       word: data.word,
       pos: data.pos,
       zh: data.zh,
       sentence,
-      x: rect.left + window.scrollX,
-      y: rect.bottom + window.scrollY + 8
+      x: left,
+      y: rect.bottom + window.scrollY + 10
     });
-  };
+    lastSelectionKeyRef.current = selectionKey;
+  }, [analysis?.sourceText]);
+
+  const scheduleSelectionLookup = useCallback((delay = 120) => {
+    if (selectionLookupTimerRef.current) {
+      window.clearTimeout(selectionLookupTimerRef.current);
+    }
+
+    selectionLookupTimerRef.current = window.setTimeout(() => {
+      void lookupSelectedText();
+    }, delay);
+  }, [lookupSelectedText]);
+
+  useEffect(() => {
+    const handleSelectionChange = () => {
+      scheduleSelectionLookup(180);
+    };
+
+    document.addEventListener('selectionchange', handleSelectionChange);
+
+    return () => {
+      document.removeEventListener('selectionchange', handleSelectionChange);
+      if (selectionLookupTimerRef.current) {
+        window.clearTimeout(selectionLookupTimerRef.current);
+      }
+    };
+  }, [scheduleSelectionLookup]);
 
   const addNote = (force = false) => {
     if (!popover) return;
@@ -270,7 +314,12 @@ export default function Home() {
       </header>
 
       <div className="layout">
-        <section className="left-panel" onMouseUp={onTextMouseUp}>
+        <section
+          ref={leftPanelRef}
+          className="left-panel"
+          onMouseUp={() => scheduleSelectionLookup(50)}
+          onTouchEnd={() => scheduleSelectionLookup(220)}
+        >
           <p className="hint">{message}</p>
 
           {!analysis && !loading && (
