@@ -69,20 +69,20 @@ const normalizeResult = (raw: AnalysisResult, sourceText: string): AnalysisResul
     answer: (q.answer || '').replace(/[^A-E]/gi, '').slice(0, 1).toUpperCase() || 'A'
   }));
 
-  const fallbackSource = sourceText || raw.article?.original || '';
+  const paragraphFallbackSource = sourceText || raw.article?.original || '';
   const paragraphs = raw.article?.paragraphs?.filter((p) => p.en?.trim()) ?? [];
   const fallbackSource = sourceText || raw.article?.original || '';
 
   return {
-    sourceText: raw.sourceText || fallbackSource,
+    sourceText: raw.sourceText || paragraphFallbackSource,
     article: {
-      original: raw.article?.original || fallbackSource,
+      original: raw.article?.original || paragraphFallbackSource,
       paragraphs: paragraphs.length
         ? paragraphs.map((p) => ({
             en: p.en?.trim() || '',
             zh: p.zh?.trim() || '段落翻译缺失，请重试。'
           }))
-        : fallbackSource
+        : paragraphFallbackSource
             .split(/\n{2,}/)
             .map((p) => p.trim())
             .filter(Boolean)
