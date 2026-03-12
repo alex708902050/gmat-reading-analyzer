@@ -1,4 +1,4 @@
-export type BilingualSentence = {
+export type BilingualParagraph = {
   en: string;
   zh: string;
 };
@@ -7,8 +7,7 @@ export type OptionItem = {
   label: 'A' | 'B' | 'C' | 'D' | 'E';
   en: string;
   zh: string;
-  isCorrect?: boolean;
-  explanation?: string;
+  reasoning: string;
 };
 
 export type QuestionItem = {
@@ -18,21 +17,20 @@ export type QuestionItem = {
   zh: string;
   options: OptionItem[];
   answer: string;
-  whyCorrect: string;
-  whyWrong: string;
 };
 
 export type AnalysisResult = {
   sourceText: string;
   article: {
     original: string;
-    sentences: BilingualSentence[];
+    paragraphs: BilingualParagraph[];
   };
   logic: {
     mainIdea: string;
-    structure: string[];
-    argumentFlow: string[];
-    authorTone: string;
+    paragraphRoles: string[];
+    paragraphLogic: string[];
+    authorView: string;
+    gmatTraps: string[];
   };
   questions: QuestionItem[];
   warnings?: string[];

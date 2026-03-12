@@ -40,22 +40,22 @@ export function WordNotesTable({ notes, onClear, highlightedWord }: Props) {
       </div>
       <input
         className="notes-search"
-        placeholder="搜索单词 / 翻译 / 句子"
+        placeholder="搜索单词 / 中文 / 句子"
         value={search}
         onChange={(e) => setSearch(e.target.value)}
       />
       <div className="notes-actions">
         <button onClick={exportExcel} disabled={notes.length === 0}>导出 Excel</button>
-        <button onClick={onClear} disabled={notes.length === 0}>一键清空</button>
+        <button onClick={onClear} disabled={notes.length === 0}>清空</button>
       </div>
       <div className="notes-table-wrap">
         <table className="notes-table">
           <thead>
             <tr>
-              <th>单词或词组</th>
+              <th>单词</th>
               <th>词性</th>
-              <th>中文翻译</th>
-              <th>所在句子（缩写）</th>
+              <th>中文</th>
+              <th>所在句子</th>
             </tr>
           </thead>
           <tbody>
