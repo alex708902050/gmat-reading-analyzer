@@ -58,6 +58,28 @@ const compressImage = async (file: File): Promise<UploadImage> => {
   };
 };
 
+
+const getContextTextFromRange = (range: Range) => {
+  const startElement = range.startContainer.nodeType === Node.TEXT_NODE
+    ? range.startContainer.parentElement
+    : (range.startContainer as Element);
+
+  let current: HTMLElement | null = startElement as HTMLElement | null;
+
+  while (current && current !== document.body) {
+    const text = current.textContent?.replace(/\s+/g, ' ').trim() ?? '';
+    const wordCount = text ? text.split(/\s+/).length : 0;
+
+    if (text && (/[.!?]/.test(text) || wordCount >= 5)) {
+      return text;
+    }
+
+    current = current.parentElement;
+  }
+
+  return startElement?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
+};
+
 const getSnippetWithWord = (word: string, sourceText: string, fallbackText: string) => {
   const normalizedWord = word.trim();
   if (!normalizedWord) return fallbackText;
@@ -67,8 +89,9 @@ const getSnippetWithWord = (word: string, sourceText: string, fallbackText: stri
 
   for (const block of blocks) {
     const clean = block.replace(/\s+/g, ' ').trim();
+    const hasSentenceDelimiter = /[.!?]/.test(clean);
     const sentences = clean
-      .split('.')
+      .split(/[.!?]/)
       .map((sentence) => sentence.trim())
       .filter(Boolean);
 
@@ -77,6 +100,10 @@ const getSnippetWithWord = (word: string, sourceText: string, fallbackText: stri
       const idx = words.findIndex((token) => token.replace(/^[^a-zA-Z]+|[^a-zA-Z]+$/g, '').toLowerCase() === lower);
 
       if (idx >= 0) {
+        if (!hasSentenceDelimiter && words.length < 5) {
+          continue;
+        }
+
         if (words.length < 5) {
           return `${sentence}.`;
         }
@@ -176,8 +203,8 @@ export default function Home() {
     if (!range) return;
 
     const rect = range.getBoundingClientRect();
-    const localText = range.startContainer.textContent?.trim() ?? '';
-    const sentence = getSnippetWithWord(selection, analysis?.sourceText ?? '', localText);
+    const contextText = getContextTextFromRange(range);
+    const sentence = getSnippetWithWord(selection, analysis?.sourceText ?? '', contextText);
 
     const res = await fetch('/api/lookup', {
       method: 'POST',
