@@ -64,27 +64,22 @@ const normalizeResult = (raw: AnalysisResult, sourceText: string): AnalysisResul
   }));
 
   const fallbackSource = sourceText || raw.article?.original || '';
-  const paragraphSource = raw.article?.paragraphs?.length
-    ? raw.article.paragraphs
-    : fallbackSource
-        .split(/\n{2,}/)
-        .map((p) => p.trim())
-        .filter(Boolean)
-        .map((p) => ({ en: p, zh: '' }));
-
-  const paragraphs = paragraphSource
-    .map((p) => ({ en: p.en?.trim() || '', zh: p.zh?.trim() || '' }))
-    .filter((p) => p.en)
-    .map((p) => ({
-      en: p.en,
-      zh: p.zh || '段落翻译缺失，请重试。'
-    }));
+  const paragraphs = raw.article?.paragraphs?.filter((p) => p.en?.trim()) ?? [];
 
   return {
     sourceText: raw.sourceText || fallbackSource,
     article: {
       original: raw.article?.original || fallbackSource,
-      paragraphs
+      paragraphs: paragraphs.length
+        ? paragraphs.map((p) => ({
+            en: p.en?.trim() || '',
+            zh: p.zh?.trim() || '段落翻译缺失，请重试。'
+          }))
+        : fallbackSource
+            .split(/\n{2,}/)
+            .map((p) => p.trim())
+            .filter(Boolean)
+            .map((p) => ({ en: p, zh: '段落翻译缺失，请重试。' }))
     },
     logic: {
       mainIdea: raw.logic?.mainIdea || '主旨提取失败，请重试。',
