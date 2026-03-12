@@ -54,3 +54,4 @@ OPENAI_API_KEY=your_key_here
 - Next.js 14
 - OpenAI Node SDK
 - xlsx
+test deploy
