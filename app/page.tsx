@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { AnalysisResult, WordLookup } from '@/lib/types';
 import { WordNotesTable, type NoteRow } from '@/components/WordNotesTable';
 
@@ -142,8 +142,9 @@ export default function Home() {
     const arr = Array.from(files).filter((file) => file.type.startsWith('image/'));
     if (!arr.length) return;
     const normalized = await Promise.all(arr.map(compressImage));
-    setImages((prev) => [...prev, ...normalized]);
+    setImages(normalized);
     setAnalysis(null);
+    setPopover(null);
     setMessage(`已添加 ${normalized.length} 张图片，点击 Analyze 开始分析。`);
   };
 
@@ -169,7 +170,7 @@ export default function Home() {
       if (data.warnings?.length) {
         setMessage(data.warnings.join('；'));
       } else {
-        setMessage('分析完成。上传新图片会清空左侧分析，右侧笔记保留。');
+        setMessage('');
       }
     } catch (error) {
       console.error(error);
@@ -224,14 +225,6 @@ export default function Home() {
     setDuplicateState(null);
   };
 
-  const stats = useMemo(
-    () => ({
-      paragraphCount: analysis?.article.paragraphs.length ?? 0,
-      questionCount: analysis?.questions.length ?? 0
-    }),
-    [analysis]
-  );
-
   return (
     <main className="app-shell">
       <header className="topbar">
@@ -253,11 +246,10 @@ export default function Home() {
           {analysis && (
             <div className="result-grid">
               <article className="card compact">
-                <h3>Passage Translation ({stats.paragraphCount})</h3>
+                <h3>Passage Translation</h3>
                 <div className="paragraph-list">
                   {analysis.article.paragraphs.map((paragraph, idx) => (
                     <section key={idx} className="paragraph-item">
-                      <h4>段落 {idx + 1}</h4>
                       <p>{paragraph.en}</p>
                       <p className="zh">{paragraph.zh}</p>
                     </section>
@@ -286,7 +278,7 @@ export default function Home() {
               </article>
 
               <article className="card compact">
-                <h3>Question Analysis ({stats.questionCount})</h3>
+                <h3>Question Analysis</h3>
                 {analysis.questions.map((q) => (
                   <div key={q.id} className="question-card">
                     <p><strong>题型：</strong>{q.type}</p>
