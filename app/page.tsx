@@ -42,7 +42,7 @@ const compressImage = async (file: File): Promise<UploadImage> => {
     img.src = dataUrl;
   });
 
-  const maxWidth = 1600;
+  const maxWidth = 1400;
   const ratio = Math.min(1, maxWidth / image.width);
   const canvas = document.createElement('canvas');
   canvas.width = Math.round(image.width * ratio);
@@ -50,13 +50,36 @@ const compressImage = async (file: File): Promise<UploadImage> => {
   const ctx = canvas.getContext('2d');
   ctx?.drawImage(image, 0, 0, canvas.width, canvas.height);
 
-  const compressed = canvas.toDataURL('image/jpeg', 0.88);
   return {
     id: `${file.name}-${file.lastModified}-${Math.random().toString(36).slice(2)}`,
     name: file.name,
     type: file.type || 'image/jpeg',
-    dataUrl: compressed
+    dataUrl: canvas.toDataURL('image/jpeg', 0.84)
   };
+};
+
+const getSnippetWithWord = (word: string, sourceText: string, fallbackText: string) => {
+  const normalizedWord = word.trim();
+  if (!normalizedWord) return fallbackText;
+
+  const blocks = [sourceText, fallbackText].filter(Boolean);
+  for (const block of blocks) {
+    const clean = block.replace(/\s+/g, ' ').trim();
+    const words = clean.split(' ').filter(Boolean);
+    const lower = normalizedWord.toLowerCase();
+    const idx = words.findIndex((token) => token.replace(/^[^a-zA-Z]+|[^a-zA-Z]+$/g, '').toLowerCase() === lower);
+
+    if (idx >= 0) {
+      const start = Math.max(0, idx - 6);
+      const end = Math.min(words.length, idx + 7);
+      const snippet = words.slice(start, end).join(' ');
+      const left = start > 0 ? '... ' : '';
+      const right = end < words.length ? ' ...' : '';
+      return `${left}${snippet}${right}`;
+    }
+  }
+
+  return fallbackText.includes(normalizedWord) ? fallbackText : `${normalizedWord} ...`;
 };
 
 export default function Home() {
@@ -64,7 +87,7 @@ export default function Home() {
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
   const [notes, setNotes] = useState<NoteRow[]>([]);
   const [popover, setPopover] = useState<PopoverState>(null);
-  const [message, setMessage] = useState('粘贴截图、拖拽图片或点击上传后，点击 Analyze 开始。');
+  const [message, setMessage] = useState('Add images and click Analyze.');
   const [images, setImages] = useState<UploadImage[]>([]);
   const [duplicateState, setDuplicateState] = useState<DuplicateState>(null);
   const [highlightedWord, setHighlightedWord] = useState<string>('');
@@ -88,7 +111,7 @@ export default function Home() {
 
     setLoading(true);
     setAnalysis(null);
-    setMessage('正在进行 OCR 与 OpenAI 分析，请稍候...');
+    setMessage('正在进行视觉识别与阅读分析，请稍候...');
 
     try {
       const res = await fetch('/api/analyze', {
@@ -120,7 +143,8 @@ export default function Home() {
     if (!range) return;
 
     const rect = range.getBoundingClientRect();
-    const sentence = (range.startContainer.textContent ?? '').slice(0, 80);
+    const localText = range.startContainer.textContent?.trim() ?? '';
+    const sentence = getSnippetWithWord(selection, analysis?.sourceText ?? '', localText);
 
     const res = await fetch('/api/lookup', {
       method: 'POST',
@@ -135,7 +159,7 @@ export default function Home() {
       zh: data.zh,
       sentence,
       x: rect.left + window.scrollX,
-      y: rect.bottom + window.scrollY + 10
+      y: rect.bottom + window.scrollY + 8
     });
   };
 
@@ -158,7 +182,7 @@ export default function Home() {
 
   const stats = useMemo(
     () => ({
-      sentenceCount: analysis?.article.sentences.length ?? 0,
+      paragraphCount: analysis?.article.paragraphs.length ?? 0,
       questionCount: analysis?.questions.length ?? 0
     }),
     [analysis]
@@ -167,10 +191,8 @@ export default function Home() {
   return (
     <main className="app-shell">
       <header className="topbar">
-        <div>
-          <h1>GMAT Reading Analyzer</h1>
-          <p>OCR + OpenAI 深度阅读分析，适配 GMAT 真题训练流程。</p>
-        </div>
+        <h1>AUTO ANALYSIS</h1>
+        <p>♡</p>
       </header>
 
       <div className="layout">
@@ -201,9 +223,8 @@ export default function Home() {
                 if (e.target.files) void addFiles(e.target.files);
               }}
             />
-            <p>支持 Ctrl+V 粘贴截图 / 拖拽上传 / 点击添加图片</p>
             <div className="composer-actions">
-              <button onClick={() => fileInputRef.current?.click()}>添加图片</button>
+              <button onClick={() => fileInputRef.current?.click()}>Add</button>
               <button className="solid" onClick={onAnalyze} disabled={loading || images.length === 0}>
                 {loading ? 'Analyzing...' : 'Analyze'}
               </button>
@@ -225,8 +246,7 @@ export default function Home() {
 
           {!analysis && !loading && (
             <div className="empty-state">
-              <h3>准备开始一轮高质量阅读分析</h3>
-              <p>上传文章与题目截图后，将自动生成双语句子、逻辑结构、题目类型与选项解析。</p>
+              <h3>♡</h3>
             </div>
           )}
 
@@ -234,47 +254,56 @@ export default function Home() {
 
           {analysis && (
             <div className="result-grid">
-              <article className="card">
-                <h3>Article</h3>
-                <pre>{analysis.article.original}</pre>
+              <article className="card compact">
+                <h3>Passage Translation ({stats.paragraphCount})</h3>
+                <div className="paragraph-list">
+                  {analysis.article.paragraphs.map((paragraph, idx) => (
+                    <section key={idx} className="paragraph-item">
+                      <h4>段落 {idx + 1}</h4>
+                      <p>{paragraph.en}</p>
+                      <p className="zh">{paragraph.zh}</p>
+                    </section>
+                  ))}
+                </div>
               </article>
 
-              <article className="card">
-                <h3>Sentence Translation ({stats.sentenceCount})</h3>
-                {analysis.article.sentences.map((s, idx) => (
-                  <div key={idx} className="sentence-row">
-                    <p><strong>EN</strong> {s.en}</p>
-                    <p><strong>ZH</strong> {s.zh}</p>
+              <article className="card compact">
+                <h3>Passage Logic</h3>
+                <div className="logic-block">
+                  <p><strong>文章主旨：</strong>{analysis.logic.mainIdea}</p>
+                  <p><strong>作者观点：</strong>{analysis.logic.authorView}</p>
+                  <div>
+                    <strong>每段作用：</strong>
+                    <ul>{analysis.logic.paragraphRoles.map((x, idx) => <li key={idx}>{x}</li>)}</ul>
                   </div>
-                ))}
+                  <div>
+                    <strong>段落之间逻辑：</strong>
+                    <ul>{analysis.logic.paragraphLogic.map((x, idx) => <li key={idx}>{x}</li>)}</ul>
+                  </div>
+                  <div>
+                    <strong>GMAT 常考题型：</strong>
+                    <ul>{analysis.logic.gmatTraps.map((x, idx) => <li key={idx}>{x}</li>)}</ul>
+                  </div>
+                </div>
               </article>
 
-              <article className="card">
-                <h3>Logic Analysis</h3>
-                <p><strong>Main Idea:</strong> {analysis.logic.mainIdea}</p>
-                <p><strong>Author Tone / Argument:</strong> {analysis.logic.authorTone}</p>
-                <ul>{analysis.logic.structure.map((x, idx) => <li key={idx}>{x}</li>)}</ul>
-                <ul>{analysis.logic.argumentFlow.map((x, idx) => <li key={idx}>{x}</li>)}</ul>
-              </article>
-
-              <article className="card">
-                <h3>Questions ({stats.questionCount})</h3>
+              <article className="card compact">
+                <h3>Question Analysis ({stats.questionCount})</h3>
                 {analysis.questions.map((q) => (
                   <div key={q.id} className="question-card">
-                    <p><strong>Type:</strong> {q.type}</p>
-                    <p><strong>EN:</strong> {q.en}</p>
-                    <p><strong>ZH:</strong> {q.zh}</p>
-                    <h4>Options</h4>
-                    {q.options.map((o) => (
-                      <div key={o.label} className="option-row">
-                        <p><strong>{o.label}.</strong> {o.en}</p>
-                        <p>{o.zh}</p>
-                      </div>
-                    ))}
-                    <h4>Answer Explanation</h4>
-                    <p><strong>Correct:</strong> {q.answer}</p>
-                    <p>{q.whyCorrect}</p>
-                    <p>{q.whyWrong}</p>
+                    <p><strong>题型：</strong>{q.type}</p>
+                    <p><strong>题干（英文）：</strong>{q.en}</p>
+                    <p><strong>题干（中文）：</strong>{q.zh}</p>
+                    <p><strong>正确答案：</strong>{q.answer}</p>
+                    <div className="option-stack">
+                      {q.options.map((o) => (
+                        <div key={o.label} className="option-row">
+                          <p><strong>{o.label}. 英文：</strong>{o.en}</p>
+                          <p><strong>{o.label}. 中文：</strong>{o.zh}</p>
+                          <p><strong>{o.label}. 解析：</strong>{o.reasoning}</p>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 ))}
               </article>
@@ -289,11 +318,10 @@ export default function Home() {
 
       {popover && (
         <div className="popover" style={{ left: popover.x, top: popover.y }}>
-          <p><strong>{popover.word}</strong></p>
+          <p className="word">{popover.word}</p>
           <p>词性：{popover.pos}</p>
           <p>中文：{popover.zh}</p>
-          <button onClick={() => addNote()}>记录到笔记</button>
-          <button onClick={() => setPopover(null)}>关闭</button>
+          <button className="save" onClick={() => addNote()}>❤️ 保存</button>
         </div>
       )}
 

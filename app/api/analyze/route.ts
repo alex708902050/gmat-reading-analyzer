@@ -40,40 +40,50 @@ const inferQuestionType = (questionText: string) => {
 
 const normalizeOptions = (options: OptionItem[]) => {
   const labels: OptionItem['label'][] = ['A', 'B', 'C', 'D', 'E'];
-  const normalized = labels
-    .map((label) => options.find((opt) => opt.label === label) ?? null)
-    .filter(Boolean) as OptionItem[];
-
-  if (normalized.length >= 4) return normalized;
-  return labels.map((label) => normalized.find((opt) => opt.label === label) ?? {
-    label,
-    en: `${label}. Missing option`,
-    zh: `${label}. 选项缺失`
+  return labels.map((label) => {
+    const option = options.find((opt) => opt.label === label);
+    return (
+      option ?? {
+        label,
+        en: `${label}. Missing option`,
+        zh: `${label}. 选项缺失`,
+        reasoning: '该选项在识别结果中缺失，请检查截图清晰度。'
+      }
+    );
   });
 };
 
 const normalizeResult = (raw: AnalysisResult, sourceText: string): AnalysisResult => {
   const questions: QuestionItem[] = (raw.questions ?? []).map((q, idx) => ({
-    ...q,
     id: q.id || `q-${idx + 1}`,
     type: q.type || inferQuestionType(q.en || ''),
+    en: q.en || `Question ${idx + 1}`,
+    zh: q.zh || '题干翻译缺失',
     options: normalizeOptions(q.options ?? []),
-    answer: (q.answer || '').replace(/[^A-E]/gi, '').slice(0, 1).toUpperCase() || 'A',
-    whyCorrect: q.whyCorrect || 'No explanation provided.',
-    whyWrong: q.whyWrong || 'No elimination notes provided.'
+    answer: (q.answer || '').replace(/[^A-E]/gi, '').slice(0, 1).toUpperCase() || 'A'
   }));
+
+  const paragraphs = raw.article?.paragraphs?.filter((p) => p.en?.trim()) ?? [];
 
   return {
     sourceText: raw.sourceText || sourceText,
     article: {
       original: raw.article?.original || sourceText,
-      sentences: raw.article?.sentences?.length ? raw.article.sentences : []
+      paragraphs: paragraphs.length
+        ? paragraphs
+        : sourceText
+            .split(/\n{2,}/)
+            .map((p) => p.trim())
+            .filter(Boolean)
+            .slice(0, 6)
+            .map((p) => ({ en: p, zh: '段落翻译缺失，请重试。' }))
     },
     logic: {
-      mainIdea: raw.logic?.mainIdea || 'N/A',
-      structure: raw.logic?.structure || [],
-      argumentFlow: raw.logic?.argumentFlow || [],
-      authorTone: raw.logic?.authorTone || 'N/A'
+      mainIdea: raw.logic?.mainIdea || '主旨提取失败，请重试。',
+      paragraphRoles: raw.logic?.paragraphRoles ?? [],
+      paragraphLogic: raw.logic?.paragraphLogic ?? [],
+      authorView: raw.logic?.authorView || '作者观点提取失败，请重试。',
+      gmatTraps: raw.logic?.gmatTraps ?? []
     },
     questions,
     warnings: raw.warnings || []
@@ -106,43 +116,40 @@ export async function POST(req: Request) {
 
   try {
     const openai = new OpenAI({ apiKey });
-    const input = [
-      {
-        role: 'system' as const,
-        content:
-          'You are a GMAT Reading expert. First perform OCR from provided images. Then extract passage, question stems, and options. Return strict JSON only. Ensure options are labeled A-E. Recognize common stem patterns: primary purpose, main idea, inference, according to the passage, the author suggests, the passage implies, it can be inferred that.'
-      },
-      {
-        role: 'user' as const,
-        content: [
-          {
-            type: 'text' as const,
-            text:
-              'Output JSON schema: {"sourceText":"", "article":{"original":"", "sentences":[{"en":"","zh":""}]}, "logic":{"mainIdea":"", "structure":[""], "argumentFlow":[""], "authorTone":""}, "questions":[{"id":"q-1","type":"","en":"","zh":"","options":[{"label":"A","en":"","zh":"","isCorrect":false,"explanation":""}],"answer":"A","whyCorrect":"","whyWrong":""}], "warnings":[]}. Translate every sentence and every option into Chinese.'
-          },
-          ...images.map((img) => ({
-            type: 'image_url' as const,
-            image_url: {
-              url: img.dataUrl
-            }
-          })),
-          ...(body.text
-            ? [
-                {
-                  type: 'text' as const,
-                  text: `Supplemental OCR text: ${body.text}`
-                }
-              ]
-            : [])
-        ]
-      }
-    ];
 
     const response = await openai.chat.completions.create({
-      model: 'gpt-4.1-mini',
+      model: 'gpt-4o-mini',
       temperature: 0.2,
       response_format: { type: 'json_object' },
-      messages: input
+      messages: [
+        {
+          role: 'system',
+          content:
+            '你是一名 GMAT 阅读老师。你需要直接基于图片做视觉识别并完成阅读分析，避免要求额外 OCR。只输出严格 JSON，不要输出 Markdown。所有逻辑分析与选项解释必须中文。'
+        },
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'text',
+              text:
+                '请输出 JSON：{"sourceText":"","article":{"original":"","paragraphs":[{"en":"","zh":""}]},"logic":{"mainIdea":"","paragraphRoles":[""],"paragraphLogic":[""],"authorView":"","gmatTraps":[""]},"questions":[{"id":"q-1","type":"","en":"","zh":"","options":[{"label":"A","en":"","zh":"","reasoning":""}],"answer":"A"}],"warnings":[]}。要求：1) 段落级中英翻译；2) Question 的 A-E 每个选项都给中文 reasoning，说明为什么对或错；3) 若信息缺失请在 warnings 说明。'
+            },
+            ...images.map((img) => ({
+              type: 'image_url' as const,
+              image_url: { url: img.dataUrl }
+            })),
+            ...(body.text
+              ? [
+                  {
+                    type: 'text' as const,
+                    text: `补充文本：${body.text}`
+                  }
+                ]
+              : [])
+          ]
+        }
+      ]
     });
 
     const parsed = JSON.parse(response.choices[0]?.message?.content ?? '{}') as AnalysisResult;

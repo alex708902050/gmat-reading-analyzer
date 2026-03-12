@@ -1,13 +1,13 @@
 import { AnalysisResult, QuestionItem, WordLookup } from './types';
 
-const splitSentences = (text: string) =>
-  text
-    .split(/(?<=[.!?])\s+/)
-    .map((s) => s.trim())
-    .filter(Boolean)
-    .slice(0, 12);
-
 const toZhStub = (text: string) => `（需配置 OPENAI_API_KEY）${text}`;
+
+const splitParagraphs = (text: string) =>
+  text
+    .split(/\n{2,}/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .slice(0, 6);
 
 const parseQuestions = (text: string): QuestionItem[] => {
   const blocks = text.split(/\n(?=\d+\.|Question\s+\d+)/i).filter((b) => /\?/.test(b));
@@ -22,8 +22,10 @@ const parseQuestions = (text: string): QuestionItem[] => {
         label: label as 'A' | 'B' | 'C' | 'D' | 'E',
         en: enOpt,
         zh: toZhStub(enOpt),
-        isCorrect: optionIndex === 0,
-        explanation: optionIndex === 0 ? '配置 key 后可生成真实解析。' : '配置 key 后可生成真实排除逻辑。'
+        reasoning:
+          optionIndex === 0
+            ? '未配置 OPENAI_API_KEY，暂无法判断正确性，请配置后重试。'
+            : '未配置 OPENAI_API_KEY，暂无法提供可靠排除理由。'
       };
     });
 
@@ -33,28 +35,26 @@ const parseQuestions = (text: string): QuestionItem[] => {
       en,
       zh: toZhStub(en),
       options,
-      answer: 'A',
-      whyCorrect: '尚未配置 OPENAI_API_KEY，暂无法生成可信答案解析。',
-      whyWrong: '尚未配置 OPENAI_API_KEY，暂无法生成选项排除分析。'
+      answer: 'A'
     };
   });
 };
 
 export const fallbackAnalysis = (sourceText: string): AnalysisResult => {
-  const paragraph = sourceText.split(/\n{2,}/).find((p) => p.trim().length > 80) ?? sourceText;
-  const sentences = splitSentences(paragraph).map((en) => ({ en, zh: toZhStub(en) }));
+  const paragraphs = splitParagraphs(sourceText);
 
   return {
     sourceText,
     article: {
-      original: paragraph.trim(),
-      sentences
+      original: sourceText,
+      paragraphs: (paragraphs.length ? paragraphs : [sourceText || '']).map((en) => ({ en, zh: toZhStub(en) }))
     },
     logic: {
       mainIdea: '未配置 OPENAI_API_KEY，暂时无法进行真实逻辑分析。',
-      structure: ['请在 Vercel 配置 OPENAI_API_KEY 后重新部署。'],
-      argumentFlow: ['重新部署后可获得主旨、段落功能、论证关系与作者态度分析。'],
-      authorTone: 'N/A'
+      paragraphRoles: ['请在 Vercel 配置 OPENAI_API_KEY 后重新部署。'],
+      paragraphLogic: ['重新部署后可获得段落衔接、作者观点与考点分析。'],
+      authorView: '未配置 OPENAI_API_KEY，暂无法判断作者观点。',
+      gmatTraps: ['未配置 OPENAI_API_KEY，暂无法生成高质量 GMAT 题型分析。']
     },
     questions: parseQuestions(sourceText),
     warnings: ['请在 Vercel 的 Environment Variables 添加 OPENAI_API_KEY，并 Redeploy。']
