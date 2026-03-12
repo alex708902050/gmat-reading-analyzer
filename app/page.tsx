@@ -80,12 +80,35 @@ const getContextTextFromRange = (range: Range) => {
   return startElement?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
 };
 
+const normalizeToken = (token: string) => token.replace(/^[^a-zA-Z]+|[^a-zA-Z]+$/g, '').toLowerCase();
+
+const stemWord = (token: string) => {
+  const clean = normalizeToken(token);
+  if (clean.length <= 4) return clean;
+  if (clean.endsWith('ing') && clean.length > 5) return clean.slice(0, -3);
+  if (clean.endsWith('ied') && clean.length > 5) return `${clean.slice(0, -3)}y`;
+  if (clean.endsWith('ed') && clean.length > 4) return clean.slice(0, -2);
+  if (clean.endsWith('es') && clean.length > 4) return clean.slice(0, -2);
+  if (clean.endsWith('s') && clean.length > 4) return clean.slice(0, -1);
+  return clean;
+};
+
+const isWordMatch = (selectedWord: string, token: string) => {
+  const selected = normalizeToken(selectedWord);
+  const target = normalizeToken(token);
+  if (!selected || !target) return false;
+  if (selected === target) return true;
+
+  const selectedStem = stemWord(selected);
+  const targetStem = stemWord(target);
+  return selectedStem.length >= 4 && selectedStem === targetStem;
+};
+
 const getSnippetWithWord = (word: string, sourceText: string, fallbackText: string) => {
   const normalizedWord = word.trim();
   if (!normalizedWord) return fallbackText;
 
   const blocks = [sourceText, fallbackText].filter(Boolean);
-  const lower = normalizedWord.toLowerCase();
 
   for (const block of blocks) {
     const clean = block.replace(/\s+/g, ' ').trim();
@@ -97,7 +120,7 @@ const getSnippetWithWord = (word: string, sourceText: string, fallbackText: stri
 
     for (const sentence of sentences) {
       const words = sentence.split(' ').filter(Boolean);
-      const idx = words.findIndex((token) => token.replace(/^[^a-zA-Z]+|[^a-zA-Z]+$/g, '').toLowerCase() === lower);
+      const idx = words.findIndex((token) => isWordMatch(normalizedWord, token));
 
       if (idx >= 0) {
         if (!hasSentenceDelimiter && words.length < 5) {
